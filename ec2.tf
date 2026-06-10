@@ -13,10 +13,7 @@ resource "aws_iam_role" "ec2_bastion_role" {
         Action = "sts:AssumeRole"
         Effect = "Allow"
         Principal = {
-          Service = [
-            "ec2.amazonaws.com",
-            "eks.amazonaws.com"
-          ]
+          Service = "ec2.amazonaws.com"
         }
       }
     ]
@@ -25,32 +22,13 @@ resource "aws_iam_role" "ec2_bastion_role" {
   tags = var.tags
 }
 
-resource "aws_iam_role_policy_attachment" "bastion_ecr_full_access" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryFullAccess"
-  role       = aws_iam_role.ec2_bastion_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "bastion_eks_cluster_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSClusterPolicy"
-  role       = aws_iam_role.ec2_bastion_role.name
-}
-
-resource "aws_iam_role_policy_attachment" "bastion_ssm_managed_instance_core" {
+# SSM access — connect to bastion without SSH keys or open security groups
+resource "aws_iam_role_policy_attachment" "bastion_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
   role       = aws_iam_role.ec2_bastion_role.name
 }
 
-resource "aws_iam_role_policy_attachment" "bastion_eks_service_policy" {
-  policy_arn = "arn:aws:iam::aws:policy/AmazonEKSServicePolicy"
-  role       = aws_iam_role.ec2_bastion_role.name
-}
-
-  # Disabled - CloudWatch agent not needed to reduce costs
-  # resource "aws_iam_role_policy_attachment" "bastion_cloudwatch_agent" {
-  #   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-  #   role       = aws_iam_role.ec2_bastion_role.name
-  # }
-
+# EKS read + kubectl access
 resource "aws_iam_role_policy" "bastion_eks_access" {
   name = "${var.cluster_name}-bastion-eks-access"
   role = aws_iam_role.ec2_bastion_role.name
@@ -70,13 +48,6 @@ resource "aws_iam_role_policy" "bastion_eks_access" {
           "eks:AccessKubernetesApi"
         ]
         Resource = "*"
-      },
-      {
-        Effect = "Allow"
-        Action = [
-          "sts:AssumeRole"
-        ]
-        Resource = module.eks.cluster_iam_role_arn
       }
     ]
   })
@@ -89,39 +60,43 @@ resource "aws_iam_instance_profile" "bastion_profile" {
 
 ################################################################################
 # EC2 Bastion Instance
+# Access via SSM Session Manager — no public IP, no SSH key needed:
+#   aws ssm start-session --target <instance-id> --region ap-southeast-3
 ################################################################################
 
 module "ec2" {
-  source        = "terraform-aws-modules/ec2-instance/aws"
-  version       = "6.4.0"
+  source  = "terraform-aws-modules/ec2-instance/aws"
+  version = "6.4.0"
+
   name          = "${var.cluster_name}-bastion"
-  instance_type = "t4g.xlarge"
-  user_data_base64 = base64encode(file("${path.module}/init.sh"))
+  instance_type = "t4g.medium"
+  ami           = "ami-0230da38227b63e1a" # Ubuntu 22.04 ARM64 ap-southeast-3
+
+  subnet_id              = module.vpc.private_subnets[0]
   vpc_security_group_ids = [module.eks.cluster_primary_security_group_id]
-  subnet_id              = var.instance_subnet_id
-  ami                    = "ami-0230da38227b63e1a"
-  iam_instance_profile   = aws_iam_instance_profile.bastion_profile.name
 
-  # Disable module-created SG - using EKS cluster SG instead
-  create_security_group  = true
-  security_group_vpc_id  = var.vpc_id
+  iam_instance_profile = aws_iam_instance_profile.bastion_profile.name
 
-  # [ADDED] Enable detailed monitoring for CloudWatch metrics at 1-minute intervals
-  monitoring = false
+  user_data_base64 = base64encode(file("${path.module}/init.sh"))
 
-  # [ADDED] Enable termination protection to prevent accidental deletion
-  disable_api_termination = true
+  # No public IP — access only via SSM
+  create_security_group = false
 
-  # [ADDED] Metadata options - IMDSv2 required for security best practice
+  # IMDSv2 required
   metadata_options = {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
     http_put_response_hop_limit = 1
   }
 
+  # Termination protection — prevent accidental destroy
+  disable_api_termination = true
+
+  monitoring = false
+
   root_block_device = {
     volume_type           = "gp3"
-    volume_size           = 50
+    volume_size           = 30
     iops                  = 3000
     throughput            = 125
     encrypted             = true
