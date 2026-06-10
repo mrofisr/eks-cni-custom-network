@@ -8,18 +8,19 @@ terraform {
     }
   }
 
+  # Fill in your S3 bucket and AWS profile before running terraform init
   backend "s3" {
-    bucket         = ""
-    key            = "terraform.tfstate"
-    profile        = ""
-    region         = "ap-southeast-3"
-    # dynamodb_table = "terraform-lock" # Uncomment after creating the DynamoDB table
+    bucket  = ""                  # e.g. "my-tfstate-bucket"
+    key     = "eks-cni-workshop/terraform.tfstate"
+    profile = ""                  # e.g. "my-aws-profile"
+    region  = "ap-southeast-3"
     encrypt = true
+    # dynamodb_table = "terraform-lock"  # Uncomment to enable state locking
   }
 }
 
 provider "aws" {
-  profile = "223880538604_LZ-PlatformAdministrator"
+  profile = var.profile
   region  = var.region
 
   default_tags {
