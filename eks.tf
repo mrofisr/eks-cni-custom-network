@@ -15,9 +15,9 @@ module "eks" {
     "karpenter.sh/discovery" = var.cluster_name
   })
 
-  create_iam_role        = true
-  create_node_iam_role   = true
-  create_security_group  = true
+  create_iam_role            = true
+  create_node_iam_role       = true
+  create_security_group      = true
   create_node_security_group = true
 
   endpoint_private_access = true
@@ -25,14 +25,60 @@ module "eks" {
 
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
-  vpc_id                                   = var.vpc_id
-  subnet_ids                               = var.subnet_ids
+
+  # Wired to VPC module outputs
+  vpc_id     = module.vpc.vpc_id
+  subnet_ids = module.vpc.private_subnets
 
   # Built-in KMS key (create_kms_key = true by default in v21)
-  # No need for separate module.kms
-
   enabled_log_types           = []
   create_cloudwatch_log_group = false
+
+  ############################################################################
+  # EKS Add-ons
+  # vpc-cni is configured for CNI custom networking + prefix delegation.
+  # ENIConfig resources are applied manually (see manifests/eniconfig.yaml).
+  ############################################################################
+
+  cluster_addons = {
+    coredns = {
+      most_recent = true
+    }
+
+    kube-proxy = {
+      most_recent = true
+    }
+
+    eks-pod-identity-agent = {
+      most_recent = true
+    }
+
+    vpc-cni = {
+      most_recent = true
+      configuration_values = jsonencode({
+        env = {
+          # Enable CNI custom networking — pods use secondary ENIs on pod subnets
+          AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG = "true"
+
+          # Use AZ node label to select the correct ENIConfig per AZ
+          ENI_CONFIG_LABEL_DEF = "topology.kubernetes.io/zone"
+
+          # Enable prefix delegation — assign /28 blocks instead of individual IPs
+          # Each prefix = 16 IPs; dramatically increases pod density per node
+          ENABLE_PREFIX_DELEGATION = "true"
+
+          # Keep 1 spare /28 prefix warm per ENI to reduce cold-start latency
+          WARM_PREFIX_TARGET = "1"
+        }
+      })
+    }
+  }
+
+  ############################################################################
+  # Managed Node Group (bootstrap tier)
+  # Runs: CoreDNS, kube-proxy, Karpenter controller
+  # Karpenter then provisions workload nodes via NodePool/EC2NodeClass
+  ############################################################################
 
   eks_managed_node_groups = {
     main = {
@@ -40,17 +86,16 @@ module "eks" {
       instance_types = var.eks_managed_node_groups.main.instance_types
       capacity_type  = var.eks_managed_node_groups.main.capacity_type
       min_size       = var.eks_managed_node_groups.main.min_size
-      max_size       = var.eks_managed_node_groups.main.max_size
+      max_size        = var.eks_managed_node_groups.main.max_size
       desired_size   = var.eks_managed_node_groups.main.desired_size
       ami_type       = var.eks_managed_node_groups.main.ami_type
 
       enable_monitoring = false
 
-      # [ADDED] Required IAM policies for node group
       iam_role_additional_policies = {
-        AmazonEKS_CNI_Policy               = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-        AmazonEC2ContainerRegistryReadOnly  = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        AmazonSSMManagedInstanceCore        = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        AmazonEKS_CNI_Policy              = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
+        AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        AmazonSSMManagedInstanceCore       = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }
 
       block_device_mappings = {
@@ -75,12 +120,12 @@ module "eks" {
       principal_arn     = aws_iam_role.ec2_bastion_role.arn
       policy_associations = {
         admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
           access_scope = { type = "cluster" }
         }
       }
     }
-    # Karpenter node access entry handled by module.karpenter (aws_eks_access_entry.node[0])
+    # Karpenter node access entry handled by module.karpenter
   }
 }
 
@@ -94,8 +139,8 @@ module "karpenter" {
 
   cluster_name = module.eks.cluster_name
 
-  create_node_iam_role = true
-  node_iam_role_name   = "KarpenterNodeRole-${var.cluster_name}"
+  create_node_iam_role          = true
+  node_iam_role_name            = "KarpenterNodeRole-${var.cluster_name}"
   node_iam_role_use_name_prefix = false
   node_iam_role_additional_policies = {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
