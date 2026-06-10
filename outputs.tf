@@ -28,6 +28,40 @@ output "eks_kms_key_arn" {
   value       = module.eks.kms_key_arn
 }
 
+output "eks_cluster_primary_security_group_id" {
+  description = "EKS cluster primary security group ID — used in ENIConfig"
+  value       = module.eks.cluster_primary_security_group_id
+}
+
+################################################################################
+# VPC
+################################################################################
+
+output "vpc_id" {
+  description = "VPC ID"
+  value       = module.vpc.vpc_id
+}
+
+output "vpc_public_subnets" {
+  description = "Public subnet IDs (NAT GW, ALB)"
+  value       = module.vpc.public_subnets
+}
+
+output "vpc_private_subnets" {
+  description = "Private subnet IDs (EKS nodes)"
+  value       = module.vpc.private_subnets
+}
+
+output "vpc_pod_subnets" {
+  description = "Pod subnet IDs (secondary CIDR 100.64.0.0/16) — used in ENIConfig"
+  value       = module.vpc.intra_subnets
+}
+
+output "vpc_azs" {
+  description = "Availability zones used"
+  value       = module.vpc.azs
+}
+
 ################################################################################
 # Karpenter
 ################################################################################
@@ -48,15 +82,6 @@ output "karpenter_queue" {
 }
 
 ################################################################################
-# ECR
-################################################################################
-
-output "ecr_repository_urls" {
-  description = "ECR repository name → URL map"
-  value       = { for k, v in module.ecr : k => v.repository_url }
-}
-
-################################################################################
 # EC2 Bastion
 ################################################################################
 
@@ -71,34 +96,17 @@ output "bastion_role_arn" {
 }
 
 ################################################################################
-# S3
+# Workshop helpers
+# Use these values to fill in manifests/eniconfig.yaml after terraform apply
 ################################################################################
 
-output "s3_bucket_id" {
-  description = "S3 bucket name"
-  value       = module.s3_bucket.s3_bucket_id
+output "workshop_eniconfig_hint" {
+  description = "Values needed to fill manifests/eniconfig.yaml"
+  value = {
+    az_0             = module.vpc.azs[0]
+    az_1             = module.vpc.azs[1]
+    pod_subnet_az_0  = module.vpc.intra_subnets[0]
+    pod_subnet_az_1  = module.vpc.intra_subnets[1]
+    security_group   = module.eks.cluster_primary_security_group_id
+  }
 }
-
-output "s3_bucket_arn" {
-  description = "S3 bucket ARN"
-  value       = module.s3_bucket.s3_bucket_arn
-}
-
-################################################################################
-# Gateway EIPs
-################################################################################
-
-output "gateway_eip_allocations" {
-  description = "Elastic IP allocation IDs for public NLB"
-  value       = [for eip in aws_eip.gateway : eip.id]
-}
-
-################################################################################
-# Alloy
-################################################################################
-
-output "alloy_cloudwatch_role_arn" {
-  description = "Alloy IRSA role ARN for CloudWatch metrics"
-  value       = aws_iam_role.alloy_cloudwatch.arn
-}
-
