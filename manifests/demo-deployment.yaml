@@ -1,0 +1,65 @@
+################################################################################
+# Demo Deployment — Prefix Delegation "aha moment"
+#
+# Scale this deployment up to see pods land on 100.64.x.x IPs (pod subnets).
+#
+# Workshop steps:
+#   1. Apply:   kubectl apply -f manifests/demo-deployment.yaml
+#   2. Scale:   kubectl scale deployment nginx-prefix-demo --replicas=50
+#   3. Watch:   kubectl get pods -o wide
+#   4. Observe: all pod IPs are in the 100.64.0.0/16 range
+#   5. Count:   kubectl get pods | grep Running | wc -l
+#
+# With prefix delegation each node ENI slot holds a /28 (16 IPs) instead of
+# 1 IP. A t4g.xlarge has 4 ENIs x 15 slots = 60 prefixes = up to 960 pod IPs
+# (capped by max-pods, but far beyond the 58 pods possible without PD).
+#
+# Cleanup:
+#   kubectl delete -f manifests/demo-deployment.yaml
+################################################################################
+
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nginx-prefix-demo
+  namespace: default
+  labels:
+    app: nginx-prefix-demo
+    workshop: cni-custom-network
+spec:
+  replicas: 5    # Start small — scale up to 50+ during the workshop
+  selector:
+    matchLabels:
+      app: nginx-prefix-demo
+  template:
+    metadata:
+      labels:
+        app: nginx-prefix-demo
+        workshop: cni-custom-network
+    spec:
+      containers:
+        - name: nginx
+          image: public.ecr.aws/nginx/nginx:1.27-alpine
+          ports:
+            - containerPort: 80
+          resources:
+            requests:
+              cpu: 10m
+              memory: 32Mi
+            limits:
+              cpu: 50m
+              memory: 64Mi
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      # Spread pods across both AZs to see IPs from both pod subnets
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: topology.kubernetes.io/zone
+          whenUnsatisfiable: DoNotSchedule
+          labelSelector:
+            matchLabels:
+              app: nginx-prefix-demo
