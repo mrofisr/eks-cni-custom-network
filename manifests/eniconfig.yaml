@@ -1,0 +1,66 @@
+################################################################################
+# ENIConfig — CNI Custom Networking
+#
+# One ENIConfig per AZ. Each maps an AZ to:
+#   - The pod subnet (secondary CIDR 100.64.0.0/16) for that AZ
+#   - The EKS cluster primary security group
+#
+# HOW TO USE
+# ----------
+# 1. Get values from Terraform outputs:
+#
+#      terraform output workshop_eniconfig_hint
+#
+#    Example output:
+#      az_0            = "ap-southeast-3a"
+#      az_1            = "ap-southeast-3b"
+#      pod_subnet_az_0 = "subnet-0abc1234"
+#      pod_subnet_az_1 = "subnet-0def5678"
+#      security_group  = "sg-0xyz9999"
+#
+# 2. Replace the placeholder values below with your actual values.
+#
+# 3. Apply:
+#      kubectl apply -f manifests/eniconfig.yaml
+#
+# 4. Verify:
+#      kubectl get eniconfigs
+#
+# 5. Cycle nodes (scale node group to 0, then back to desired):
+#      aws eks update-nodegroup-config \
+#        --cluster-name <cluster-name> \
+#        --nodegroup-name bootstrap-nodes \
+#        --scaling-config minSize=0,maxSize=3,desiredSize=0 \
+#        --region ap-southeast-3
+#
+#      # Wait for nodes to terminate, then scale back up:
+#      aws eks update-nodegroup-config \
+#        --cluster-name <cluster-name> \
+#        --nodegroup-name bootstrap-nodes \
+#        --scaling-config minSize=1,maxSize=3,desiredSize=2 \
+#        --region ap-southeast-3
+#
+# 6. Verify new nodes get pods on 100.64.x.x:
+#      kubectl get pods -A -o wide
+#
+################################################################################
+
+---
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: ap-southeast-3a      # REPLACE: use exact AZ name from terraform output
+spec:
+  securityGroups:
+    - sg-REPLACE_WITH_CLUSTER_PRIMARY_SG    # terraform output eks_cluster_primary_security_group_id
+  subnet: subnet-REPLACE_WITH_POD_SUBNET_AZ_A   # terraform output vpc_pod_subnets[0]
+
+---
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: ap-southeast-3b      # REPLACE: use exact AZ name from terraform output
+spec:
+  securityGroups:
+    - sg-REPLACE_WITH_CLUSTER_PRIMARY_SG    # terraform output eks_cluster_primary_security_group_id
+  subnet: subnet-REPLACE_WITH_POD_SUBNET_AZ_B   # terraform output vpc_pod_subnets[1]
