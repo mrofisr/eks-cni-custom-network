@@ -25,7 +25,7 @@ resource "aws_iam_role_policy_attachment" "vpc_cni" {
 
 # [ADDED] Tag subnets for Karpenter discovery - required for Karpenter to find subnets
 resource "aws_ec2_tag" "karpenter_subnet_tags" {
-  for_each    = toset(var.subnet_ids)
+  for_each    = toset(module.vpc.private_subnets)
   resource_id = each.value
   key         = "karpenter.sh/discovery"
   value       = var.cluster_name

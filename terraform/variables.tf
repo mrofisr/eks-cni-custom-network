@@ -1,7 +1,6 @@
 variable "profile" {
   description = "AWS Profile to Execute this Terraform"
   type        = string
-  default     = "223880538604_LZ-PlatformAdministrator"
 }
 
 variable "region" {
@@ -18,25 +17,12 @@ variable "repository_name" {
   description = "List of ECR repository names to create"
   type        = list(string)
   default = [
-    "ava/genai-api",
-    "ava/genai-web",
-    "ava/genai-plugin-daemon",
-    "ava/genai-weaviate",
-    "ava/genai-valkey",
-    "ava/genai-postgres",
-    "ava/genai-firecrawl",
-    "ava/genai-playwright",
-    "ava/genai-nginx",
-    "ava/genai-sandbox",
-    "ava/genai-mcp",
-    "ava/grafana-alloy",
-    "ava/grafana-grafana",
-    "ava/grafana-mimir",
-    "ava/grafana-alertmanager",
-    "ava/prometheus-msteams",
-    "ava/grafana-loki",
-    "ava/busybox",
-    "ava/nginx-prometheus-exporter"
+    "jawaracloud/grafana-alloy",
+    "jawaracloud/grafana-grafana",
+    "jawaracloud/grafana-mimir",
+    "jawaracloud/grafana-alertmanager",
+    "jawaracloud/grafana-loki",
+    "jawaracloud/busybox",
   ]
 }
 
@@ -61,7 +47,7 @@ variable "eks_managed_node_groups" {
   type        = map(any)
   default = {
     main = {
-      name                     = "ava-eks-nodes"
+      name                     = "jawaracloud-eks-nodes"
       instance_types           = ["t4g.xlarge"]
       capacity_type            = "SPOT"
       spot_allocation_strategy = "capacity-optimized"
@@ -90,10 +76,10 @@ variable "tags" {
   description = "A map of tags to add to all resources"
   type        = map(string)
   default = {
-    "Project"     = "AVA"
+    "Project"     = "JawaraCloud"
     "Environment" = "Prod"
     "Terraform"   = "true"
-    "OwnerTeam"   = "AVA"
+    "OwnerTeam"   = "JawaraCloud"
   }
 }
 
@@ -115,5 +101,39 @@ variable "instance_subnet_id" {
 variable "karpenter_version" {
   description = "Karpenter Helm chart version"
   type        = string
-  default     = "1.11.1"
+  default     = "1.14.0"
+}
+
+#################################################################################
+# VPC
+#################################################################################
+
+variable "vpc_cidr" {
+  description = "CIDR block for the VPC"
+  type        = string
+  default     = "10.0.0.0/16"
+}
+
+variable "secondary_cidr_blocks" {
+  description = "Secondary CIDR blocks for the VPC (used for CNI custom networking)"
+  type        = list(string)
+  default     = ["100.64.0.0/16"]
+}
+
+variable "private_subnets" {
+  description = "Private subnet CIDR blocks"
+  type        = list(string)
+  default     = ["10.0.1.0/24", "10.0.2.0/24", "10.0.3.0/24"]
+}
+
+variable "public_subnets" {
+  description = "Public subnet CIDR blocks"
+  type        = list(string)
+  default     = ["10.0.101.0/24", "10.0.102.0/24", "10.0.103.0/24"]
+}
+
+variable "intra_subnets" {
+  description = "Intra subnet CIDR blocks for CNI custom networking"
+  type        = list(string)
+  default     = ["100.64.1.0/24", "100.64.2.0/24", "100.64.3.0/24"]
 }

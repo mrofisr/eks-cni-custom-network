@@ -15,9 +15,9 @@ module "eks" {
     "karpenter.sh/discovery" = var.cluster_name
   })
 
-  create_iam_role        = true
-  create_node_iam_role   = true
-  create_security_group  = true
+  create_iam_role            = true
+  create_node_iam_role       = true
+  create_security_group      = true
   create_node_security_group = true
 
   endpoint_private_access = true
@@ -25,8 +25,8 @@ module "eks" {
 
   enable_cluster_creator_admin_permissions = true
   enable_irsa                              = true
-  vpc_id                                   = var.vpc_id
-  subnet_ids                               = var.subnet_ids
+  vpc_id                                   = module.vpc.vpc_id
+  subnet_ids                               = module.vpc.private_subnets
 
   # Built-in KMS key (create_kms_key = true by default in v21)
   # No need for separate module.kms
@@ -49,8 +49,8 @@ module "eks" {
       # [ADDED] Required IAM policies for node group
       iam_role_additional_policies = {
         AmazonEKS_CNI_Policy               = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
-        AmazonEC2ContainerRegistryReadOnly  = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
-        AmazonSSMManagedInstanceCore        = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+        AmazonSSMManagedInstanceCore       = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
       }
 
       block_device_mappings = {
@@ -75,7 +75,7 @@ module "eks" {
       principal_arn     = aws_iam_role.ec2_bastion_role.arn
       policy_associations = {
         admin = {
-          policy_arn = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+          policy_arn   = "arn:aws:eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
           access_scope = { type = "cluster" }
         }
       }
@@ -94,8 +94,8 @@ module "karpenter" {
 
   cluster_name = module.eks.cluster_name
 
-  create_node_iam_role = true
-  node_iam_role_name   = "KarpenterNodeRole-${var.cluster_name}"
+  create_node_iam_role          = true
+  node_iam_role_name            = "KarpenterNodeRole-${var.cluster_name}"
   node_iam_role_use_name_prefix = false
   node_iam_role_additional_policies = {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"

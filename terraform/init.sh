@@ -222,7 +222,7 @@ set -e
 
 CLUSTER_NAME="eks-default"
 AWS_REGION="ap-southeast-3"
-KARPENTER_VERSION="1.11.1"
+KARPENTER_VERSION="1.14.0"
 MANIFEST_DIR="/home/ubuntu/manifest/kubernetes/yaml/prod/thirdparty"
 
 echo "==> Configuring kubectl..."

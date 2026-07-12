@@ -45,11 +45,11 @@ resource "aws_iam_role_policy_attachment" "bastion_eks_service_policy" {
   role       = aws_iam_role.ec2_bastion_role.name
 }
 
-  # Disabled - CloudWatch agent not needed to reduce costs
-  # resource "aws_iam_role_policy_attachment" "bastion_cloudwatch_agent" {
-  #   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
-  #   role       = aws_iam_role.ec2_bastion_role.name
-  # }
+# Disabled - CloudWatch agent not needed to reduce costs
+# resource "aws_iam_role_policy_attachment" "bastion_cloudwatch_agent" {
+#   policy_arn = "arn:aws:iam::aws:policy/CloudWatchAgentServerPolicy"
+#   role       = aws_iam_role.ec2_bastion_role.name
+# }
 
 resource "aws_iam_role_policy" "bastion_eks_access" {
   name = "${var.cluster_name}-bastion-eks-access"
@@ -92,19 +92,19 @@ resource "aws_iam_instance_profile" "bastion_profile" {
 ################################################################################
 
 module "ec2" {
-  source        = "terraform-aws-modules/ec2-instance/aws"
-  version       = "6.4.0"
-  name          = "${var.cluster_name}-bastion"
-  instance_type = "t4g.xlarge"
-  user_data_base64 = base64encode(file("${path.module}/init.sh"))
+  source                 = "terraform-aws-modules/ec2-instance/aws"
+  version                = "6.4.0"
+  name                   = "${var.cluster_name}-bastion"
+  instance_type          = "t4g.xlarge"
+  user_data_base64       = base64encode(file("${path.module}/init.sh"))
   vpc_security_group_ids = [module.eks.cluster_primary_security_group_id]
-  subnet_id              = var.instance_subnet_id
+  subnet_id              = module.vpc.private_subnets[0]
   ami                    = "ami-0230da38227b63e1a"
   iam_instance_profile   = aws_iam_instance_profile.bastion_profile.name
 
   # Disable module-created SG - using EKS cluster SG instead
-  create_security_group  = true
-  security_group_vpc_id  = var.vpc_id
+  create_security_group = true
+  security_group_vpc_id = module.vpc.vpc_id
 
   # [ADDED] Enable detailed monitoring for CloudWatch metrics at 1-minute intervals
   monitoring = false

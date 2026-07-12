@@ -74,14 +74,24 @@ output "bastion_role_arn" {
 # S3
 ################################################################################
 
-output "s3_bucket_id" {
-  description = "S3 bucket name"
-  value       = module.s3_bucket.s3_bucket_id
+output "s3_tfstate_bucket_id" {
+  description = "S3 state bucket name"
+  value       = module.s3_tfstate.s3_bucket_id
 }
 
-output "s3_bucket_arn" {
-  description = "S3 bucket ARN"
-  value       = module.s3_bucket.s3_bucket_arn
+output "s3_tfstate_bucket_arn" {
+  description = "S3 state bucket ARN"
+  value       = module.s3_tfstate.s3_bucket_arn
+}
+
+output "s3_data_bucket_id" {
+  description = "S3 data bucket name"
+  value       = module.s3_data.s3_bucket_id
+}
+
+output "s3_data_bucket_arn" {
+  description = "S3 data bucket ARN"
+  value       = module.s3_data.s3_bucket_arn
 }
 
 ################################################################################
@@ -100,5 +110,29 @@ output "gateway_eip_allocations" {
 output "alloy_cloudwatch_role_arn" {
   description = "Alloy IRSA role ARN for CloudWatch metrics"
   value       = aws_iam_role.alloy_cloudwatch.arn
+}
+
+################################################################################
+# VPC
+################################################################################
+
+output "vpc_id" {
+  description = "VPC ID"
+  value       = module.vpc.vpc_id
+}
+
+output "private_subnets" {
+  description = "Private subnet IDs"
+  value       = module.vpc.private_subnets
+}
+
+output "public_subnets" {
+  description = "Public subnet IDs"
+  value       = module.vpc.public_subnets
+}
+
+output "intra_subnets" {
+  description = "Intra subnet IDs (CNI custom networking)"
+  value       = module.vpc.intra_subnets
 }
 
