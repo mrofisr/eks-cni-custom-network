@@ -5,177 +5,83 @@ Terraform configuration for an EKS cluster with CNI custom networking, Karpenter
 ## Architecture
 
 ```
-                                ┌──────────────────────────┐
-                                │    Internet Gateway      │
-                                └────────────┬─────────────┘
-                                             │
-┌────────────────────────────────────────────┼──────────────────────────────────────────────┐
-│ VPC (10.0.0.0/16)                          │      Secondary CIDR: 100.64.0.0/16         │
-│                                            │                                              │
-│  ┌─────────────────────── Public Subnets ──┼───────────────────────────────────────┐      │
-│  │                                        │                                       │      │
-│  │   ┌──────────────┐ ┌──────────────┐ ┌──────────────┐                           │      │
-│  │   │  10.0.101/24  │ │  10.0.102/24  │ │  10.0.103/24  │    Load Balancers       │      │
-│  │   │   AZ-a       │ │   AZ-b       │ │   AZ-c       │                           │      │
-│  │   └──────────────┘ └──────────────┘ └──────────────┘                           │      │
-│  └─────────────────────────────────────────────────────────────────────────────────┘      │
-│           │                                                                                │
-│  ┌────────┼─────── Private Subnets ─────────────────────────────────────────────────┐     │
-│  │        │                                                                        │     │
-│  │   ┌────▼──────────┐ ┌──────────────┐ ┌──────────────┐                          │     │
-│  │   │   10.0.1/24    │ │   10.0.2/24   │ │   10.0.3/24   │   ◄── NAT Gateway       │     │
-│  │   │   AZ-a        │ │   AZ-b        │ │   AZ-c        │                          │     │
-│  │   │              │ │              │ │              │                          │     │
-│  │   │  ┌────────┐  │ │  ┌────────┐  │ │  ┌────────┐  │                          │     │
-│  │   │  │ EKS    │  │ │  │ EKS    │  │ │  │ EKS    │  │   ◄── Karpenter Nodes    │     │
-│  │   │  │ Node   │  │ │  │ Node   │  │ │  │ Node   │  │      (Spot/On-Demand)    │     │
-│  │   │  └────────┘  │ │  └────────┘  │ │  └────────┘  │                          │     │
-│  │   │              │ │              │ │              │                          │     │
-│  │   │  ┌────────┐  │ │              │ │              │                          │     │
-│  │   │  │Bastion │  │ │              │ │              │   ◄── SSM Session Mgr     │     │
-│  │   │  │ (EC2)  │  │ │              │ │              │      (no public IP)       │     │
-│  │   │  └────────┘  │ │              │ │              │                          │     │
-│  │   └──────────────┘ └──────────────┘ └──────────────┘                          │     │
-│  └─────────────────────────────────────────────────────────────────────────────────┘     │
-│           │                                                                                │
-│  ┌────────┼─────── Intra Subnets ─── CNI Custom Networking ─────────────────────────┐    │
-│  │        │                                                                        │    │
-│  │   ┌────▼──────────┐ ┌──────────────┐ ┌──────────────┐                          │    │
-│  │   │  100.64.1/24   │ │  100.64.2/24  │ │  100.64.3/24  │   ◄── Private NAT       │    │
-│  │   │   AZ-a        │ │   AZ-b        │ │   AZ-c        │                          │    │
-│  │   │              │ │              │ │              │                          │    │
-│  │   │  Pod ENIs    │ │  Pod ENIs    │ │  Pod ENIs    │   ◄── ENIConfig / AZ     │    │
-│  │   │  (secondary) │ │  (secondary) │ │  (secondary) │                          │    │
-│  │   │              │ │              │ │              │                          │    │
-│  │   │  100.64.x.x  │ │  100.64.x.x  │ │  100.64.x.x  │   ◄── Prefix Delegation  │    │
-│  │   └──────────────┘ └──────────────┘ └──────────────┘                          │    │
-│  └─────────────────────────────────────────────────────────────────────────────────┘    │
-│                                                                                          │
-└──────────────────────────────────────────────────────────────────────────────────────────┘
-
-  ┌─────────────────────────────────────────────────────────────────────────────────────────┐
-  │                              Supporting Services                                        │
-  │                                                                                         │
-  │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐                 │
-  │   │  ECR (19)   │  │  S3 State   │  │  S3 Data    │  │  EIPs/NLB   │                 │
-  │   │  repos      │  │  bucket     │  │  bucket     │  │  (per AZ)   │                 │
-  │   └─────────────┘  └─────────────┘  └─────────────┘  └─────────────┘                 │
-  └─────────────────────────────────────────────────────────────────────────────────────────┘
+                          Internet Gateway
+                                 │
+┌────────────────────────────────┼────────────────────────────────┐
+│ VPC 10.0.0.0/16                │   Secondary CIDR 100.64.0.0/16 │
+│                                │                                │
+│  Public Subnets (Load Balancers only)                           │
+│  ├── 10.0.101.0/24  AZ-a                                        │
+│  ├── 10.0.102.0/24  AZ-b                                        │
+│  └── 10.0.103.0/24  AZ-c                                        │
+│          │ NAT Gateway                                          │
+│  Private Subnets (EKS nodes, bastion)                           │
+│  ├── 10.0.1.0/24  AZ-a  ── EKS Node, Bastion (SSM only)        │
+│  ├── 10.0.2.0/24  AZ-b  ── EKS Node                            │
+│  └── 10.0.3.0/24  AZ-c  ── EKS Node                            │
+│          │ Private NAT                                          │
+│  Intra Subnets (Pod ENIs via CNI custom networking)             │
+│  ├── 100.64.1.0/24  AZ-a  ── ENIConfig / Pod IPs               │
+│  ├── 100.64.2.0/24  AZ-b  ── ENIConfig / Pod IPs               │
+│  └── 100.64.3.0/24  AZ-c  ── ENIConfig / Pod IPs               │
+└─────────────────────────────────────────────────────────────────┘
 ```
 
-## CNI Custom Networking Flow
+## CNI Custom Networking
+
+Pods get IPs from the intra subnets (100.64.x.x), not from the node's subnet. The `aws-node` daemonset creates a secondary ENI in the intra subnet for each node, and ENIConfig selects the right subnet per AZ.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                         CNI Custom Networking                               │
-│                                                                             │
-│   Node (private subnet)              Pod (intra subnet)                     │
-│  ┌──────────────────────┐           ┌──────────────────────┐               │
-│  │                      │           │                      │               │
-│  │  eth0                │           │  eth0                │               │
-│  │  10.0.x.x            │           │  100.64.x.x          │               │
-│  │  (primary ENI)       │           │  (secondary ENI)     │               │
-│  │                      │           │                      │               │
-│  │  ┌────────────────┐  │  creates  │  ┌────────────────┐  │               │
-│  │  │ aws-node       │  │──────────>│  │ ENIConfig      │  │               │
-│  │  │ daemonset      │  │  ENI in   │  │ (per AZ)       │  │               │
-│  │  │                │  │  intra    │  │                │  │               │
-│  │  │ • CUSTOM_NETWORK│  │  subnet  │  │ subnet: intra  │  │               │
-│  │  │ • PREFIX_DELEG │  │           │  │ securityGroups │  │               │
-│  │  │ • POD_ENI      │  │           │  └────────────────┘  │               │
-│  │  └────────────────┘  │           │                      │               │
-│  │                      │           │  ┌────────────────┐  │               │
-│  │  ┌────────────────┐  │           │  │ SecurityGroup  │  │               │
-│  │  │ Pod Identity   │  │           │  │ Policy (CRD)   │  │               │
-│  │  │ (IAM for pods) │  │           │  │ pod-level SG   │  │               │
-│  │  └────────────────┘  │           │  └────────────────┘  │               │
-│  └──────────────────────┘           └──────────────────────┘               │
-│                                                                             │
-└─────────────────────────────────────────────────────────────────────────────┘
+Node (10.0.x.x, private subnet)          Pod (100.64.x.x, intra subnet)
+  eth0 = primary ENI                        eth0 = secondary ENI
+  aws-node daemonset  ──creates ENI──>      ENIConfig (per AZ)
+    CUSTOM_NETWORK_CFG = true               subnet: intra
+    PREFIX_DELEGATION  = true               securityGroups: pod-level SGP
+    POD_ENI            = true
+    ENI_CONFIG_LABEL   = topology zone
 ```
 
-## Components
+## Modules
+
+| Module | Version | Purpose |
+|--------|---------|---------|
+| `terraform-aws-modules/vpc/aws` | 6.6.1 | VPC with public/private/intra subnets, secondary CIDR |
+| `terraform-aws-modules/eks/aws` | 21.17.1 | EKS cluster, managed node group, KMS encryption |
+| `terraform-aws-modules/eks/aws//modules/karpenter` | 21.17.1 | Node autoscaler, SQS, EventBridge |
+| `terraform-aws-modules/ec2-instance/aws` | 6.4.0 | Bastion host (private subnet, SSM access) |
+| `terraform-aws-modules/ecr/aws` | 3.2.0 | 19 private repositories with lifecycle policies |
+| `terraform-aws-modules/s3-bucket/aws` | 5.14.1 | State bucket + data bucket (SSE-S3, versioned) |
+
+## File Structure
 
 ```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                        Terraform Modules                                │
-  │                                                                         │
-  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐              │
-  │  │  VPC          │  │  EKS          │  │  Karpenter    │              │
-  │  │  v6.6.1       │  │  v21.17.1     │  │  v21.17.1     │              │
-  │  │               │  │               │  │  (submodule)  │              │
-  │  │ • public      │  │ • cluster     │  │               │              │
-  │  │ • private     │  │ • node group  │  │ • SQS queue   │              │
-  │  │ • intra       │  │ • KMS         │  │ • EventBridge │              │
-  │  │ • secondary   │  │ • access      │  │ • node IAM    │              │
-  │  │   CIDR        │  │   entries     │  │               │              │
-  │  └───────────────┘  └───────────────┘  └───────────────┘              │
-  │                                                                         │
-  │  ┌───────────────┐  ┌───────────────┐  ┌───────────────┐              │
-  │  │  EC2          │  │  ECR          │  │  S3           │              │
-  │  │  v6.4.0       │  │  v3.2.0       │  │  v5.14.1      │              │
-  │  │               │  │               │  │               │              │
-  │  │ • bastion     │  │ • 19 repos    │  │ • state       │              │
-  │  │ • SSM access  │  │ • lifecycle   │  │ • data        │              │
-  │  │ • no public IP│  │ • for_each    │  │ • SSE-S3      │              │
-  │  └───────────────┘  └───────────────┘  └───────────────┘              │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
+terraform/
+├── main.tf        providers, backend, data sources
+├── vpc.tf         VPC module + private NAT gateway
+├── eks.tf         EKS cluster + Karpenter
+├── ec2.tf         bastion host + IAM
+├── ecr.tf         ECR repositories (for_each)
+├── s3.tf          S3 buckets (state + data)
+├── cni.tf         VPC CNI addon + ENIConfig + SGP
+├── iam.tf         Pod Identity, Karpenter, Alloy IRSA
+├── eip.tf         gateway Elastic IPs per AZ
+├── variables.tf
+└── outputs.tf
+Makefile
 ```
-
-| Module | Source | Version | Purpose |
-|--------|--------|---------|---------|
-| VPC | `terraform-aws-modules/vpc/aws` | 6.6.1 | VPC with public/private/intra subnets, secondary CIDR |
-| EKS | `terraform-aws-modules/eks/aws` | 21.17.1 | EKS cluster, managed node group, KMS encryption |
-| Karpenter | `terraform-aws-modules/eks/aws//modules/karpenter` | 21.17.1 | Node autoscaler, SQS, EventBridge |
-| EC2 | `terraform-aws-modules/ec2-instance/aws` | 6.4.0 | Bastion host (private subnet, SSM access) |
-| ECR | `terraform-aws-modules/ecr/aws` | 3.2.0 | 19 private repositories with lifecycle policies |
-| S3 | `terraform-aws-modules/s3-bucket/aws` | 5.14.1 | State bucket + data bucket (SSE-S3, versioned) |
 
 ## Prerequisites
 
-```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                          Prerequisites                                  │
-  │                                                                         │
-  │   ✓  Terraform >= 1.5.7                                                │
-  │   ✓  AWS CLI configured with correct profile                          │
-  │   ✓  kubectl for cluster access                                       │
-  │   ✓  SSM Session Manager plugin (for bastion access)                  │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
-```
+- Terraform >= 1.5.7
+- AWS CLI configured with correct profile
+- kubectl
+- SSM Session Manager plugin (for bastion access)
 
 ## Quick Start
 
-```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                        Quick Start                                      │
-  │                                                                         │
-  │   $ make init               # Initialize Terraform                     │
-  │   $ make plan               # Review the plan                          │
-  │   $ make apply              # Apply changes                            │
-  │                                                                         │
-  │   # Configure kubectl                                                  │
-  │   $ aws eks update-kubeconfig \                                        │
-  │       --region ap-southeast-3 \                                        │
-  │       --name eks-default                                               │
-  │                                                                         │
-  │   # Access bastion via SSM                                             │
-  │   $ aws ssm start-session \                                           │
-  │       --target <instance-id>                                           │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
-```
-
 ```bash
-# Initialize Terraform
 make init
-
-# Review the plan
 make plan
-
-# Apply
 make apply
 
 # Configure kubectl
@@ -185,113 +91,50 @@ aws eks update-kubeconfig --region ap-southeast-3 --name eks-default
 aws ssm start-session --target $(terraform -chdir=terraform output -raw bastion_instance_id)
 ```
 
-## File Structure
+## Makefile Targets
 
 ```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                        File Structure                                   │
-  │                                                                         │
-  │   terraform/                                                            │
-  │   ├── main.tf          │ Providers, backend, data sources              │
-  │   ├── vpc.tf           │ VPC module + private NAT gateway              │
-  │   ├── eks.tf           │ EKS cluster + Karpenter                       │
-  │   ├── ec2.tf           │ Bastion host (private subnet) + IAM           │
-  │   ├── ecr.tf           │ ECR repositories (for_each)                   │
-  │   ├── s3.tf            │ S3 buckets (state + data)                     │
-  │   ├── cni.tf           │ VPC CNI addon + ENIConfig + SGP               │
-  │   ├── iam.tf           │ VPC CNI Pod Identity, Karpenter, Alloy IRSA   │
-  │   ├── eip.tf           │ Gateway Elastic IPs per AZ                    │
-  │   ├── variables.tf     │ All input variables                           │
-  │   ├── outputs.tf       │ All outputs                                   │
-  │   └── init.sh          │ Bastion bootstrap script                      │
-  │                                                                         │
-  │   Makefile             │ Build targets                                 │
-  │   README.md            │ This file                                     │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
+make init          initialize Terraform
+make plan          preview changes
+make apply         apply changes
+make destroy       destroy all resources
+make fmt           format Terraform files
+make validate      validate configuration
+make clean         remove .terraform/ and state files
+make output        show outputs
+make state-list    list state resources
 ```
 
-## Key Configuration
+## ECR Repositories
 
-### CNI Custom Networking
-
-```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                     VPC CNI Addon Settings                              │
-  │                                                                         │
-  │   AWS_VPC_K8S_CNI_CUSTOM_NETWORK_CFG = true                            │
-  │       └── Pods get IPs from intra subnets (not node subnet)            │
-  │                                                                         │
-  │   ENABLE_PREFIX_DELEGATION = true                                       │
-  │       └── /28 prefixes instead of individual IPs → higher density       │
-  │                                                                         │
-  │   ENABLE_POD_ENI = true                                                 │
-  │       └── Security groups for pods (branch ENIs)                        │
-  │                                                                         │
-  │   ENI_CONFIG_LABEL_DEF = topology.kubernetes.io/zone                    │
-  │       └── AZ-aware ENIConfig selection                                  │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
-```
-
-### Subnets
+19 repositories under `jawaracloud/` with lifecycle rules: keep last 30 tagged images, expire untagged after 7 days.
 
 ```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                           Subnet Layout                                 │
-  │                                                                         │
-  │   Type      │ CIDR             │ Purpose                                │
-  │   ──────────┼──────────────────┼─────────────────────────────────────── │
-  │   Public    │ 10.0.101-103/24  │ Load balancers only                   │
-  │   Private   │ 10.0.1-3/24      │ EKS nodes, bastion, NAT gateway       │
-  │   Intra     │ 100.64.1-3/24    │ Pod ENIs (CNI custom networking)       │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
-```
-
-### ECR Repositories
-
-```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                     ECR Lifecycle Policies                              │
-  │                                                                         │
-  │   19 repositories under jawaracloud/ namespace                          │
-  │                                                                         │
-  │   Rule 1:  Keep last 30 images (any tag)                               │
-  │   Rule 2:  Expire untagged images after 7 days                         │
-  │                                                                         │
-  │   Repositories:                                                         │
-  │   ├── jawaracloud/genai-*          (11 repos)                           │
-  │   ├── jawaracloud/grafana-*        (5 repos)                            │
-  │   ├── jawaracloud/prometheus-*     (1 repo)                             │
-  │   ├── jawaracloud/busybox          (1 repo)                             │
-  │   └── jawaracloud/nginx-*          (1 repo)                             │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
+jawaracloud/ai-*          (11 repos)
+jawaracloud/grafana-*     (5 repos)
+jawaracloud/prometheus-*  (1 repo)
+jawaracloud/busybox        (1 repo)
+jawaracloud/nginx-*        (1 repo)
 ```
 
 ## Karpenter Setup
 
-After applying Terraform, deploy Karpenter CRDs and NodePool from the bastion host.
+Deploy after `make apply`, from the bastion or any kubectl-configured machine.
 
-> **Docs:** [karpenter.sh/v1.14/getting-started](https://karpenter.sh/v1.14/getting-started/) | [NodePool](https://karpenter.sh/v1.14/concepts/nodepools/) | [EC2NodeClass](https://karpenter.sh/v1.14/concepts/nodeclasses/) | [Disruption](https://karpenter.sh/v1.14/concepts/disruption/)
-
-### 1. Install Karpenter CRDs
+### 1. Install CRDs
 
 ```bash
 KARPENTER_VERSION="1.14.0"
 
 kubectl apply --server-side -f \
   "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/pkg/apis/crds/karpenter.sh_nodepools.yaml"
-
 kubectl apply --server-side -f \
   "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/pkg/apis/crds/karpenter.k8s.aws_ec2nodeclasses.yaml"
-
 kubectl apply --server-side -f \
   "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/pkg/apis/crds/karpenter.sh_nodeclaims.yaml"
 ```
 
-### 2. Deploy Karpenter (Helm)
+### 2. Deploy via Helm
 
 ```bash
 CLUSTER_NAME="eks-default"
@@ -373,45 +216,4 @@ EOF
 kubectl get nodepools
 kubectl get ec2nodeclasses
 kubectl get nodeclaims
-```
-
-### 5. Test (optional)
-
-```bash
-kubectl scale deployment inflate --replicas 5
-kubectl get nodeclaims -w
-
-kubectl delete deployment inflate
-# Karpenter consolidates empty nodes automatically
-```
-
-## Commands
-
-```
-  ┌─────────────────────────────────────────────────────────────────────────┐
-  │                         Makefile Targets                                │
-  │                                                                         │
-  │   make init         │ Initialize Terraform                             │
-  │   make plan         │ Preview changes                                  │
-  │   make apply        │ Apply changes                                    │
-  │   make destroy      │ Destroy all resources                            │
-  │   make fmt          │ Format Terraform files                           │
-  │   make validate     │ Validate configuration                           │
-  │   make clean        │ Remove .terraform/ and state files               │
-  │   make output       │ Show outputs                                     │
-  │   make state-list   │ List state resources                             │
-  │                                                                         │
-  └─────────────────────────────────────────────────────────────────────────┘
-```
-
-```bash
-make init          # Initialize Terraform
-make plan          # Preview changes
-make apply         # Apply changes
-make destroy       # Destroy all resources
-make fmt           # Format Terraform files
-make validate      # Validate configuration
-make clean         # Remove .terraform/ and state files
-make output        # Show outputs
-make state-list    # List state resources
 ```
