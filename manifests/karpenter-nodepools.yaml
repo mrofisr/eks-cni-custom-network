@@ -1,0 +1,60 @@
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: arm64-app
+spec:
+  template:
+    metadata:
+      labels:
+        workload-tier: app
+    spec:
+      requirements:
+        - { key: kubernetes.io/arch,                     operator: In, values: ["arm64"] }
+        - { key: kubernetes.io/os,                       operator: In, values: ["linux"] }
+        - { key: karpenter.sh/capacity-type,             operator: In, values: ["spot", "on-demand"] }
+        - { key: karpenter.k8s.aws/instance-category,    operator: In, values: ["c", "m", "r"] }
+        - { key: karpenter.k8s.aws/instance-generation,  operator: Gt, values: ["5"] }
+        - { key: karpenter.k8s.aws/instance-size,        operator: In, values: ["xlarge", "2xlarge"] }
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 336h
+  limits:
+    cpu: 32
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s
+---
+apiVersion: karpenter.sh/v1
+kind: NodePool
+metadata:
+  name: arm64-db
+spec:
+  template:
+    metadata:
+      labels:
+        workload-tier: db
+        workload-type: database
+    spec:
+      taints:
+        - key: workload-type
+          value: database
+          effect: NoSchedule
+      requirements:
+        - { key: kubernetes.io/arch,                     operator: In, values: ["arm64"] }
+        - { key: kubernetes.io/os,                       operator: In, values: ["linux"] }
+        - { key: karpenter.sh/capacity-type,             operator: In, values: ["on-demand"] }
+        - { key: karpenter.k8s.aws/instance-category,    operator: In, values: ["r"] }
+        - { key: karpenter.k8s.aws/instance-generation,  operator: Gt, values: ["5"] }
+        - { key: karpenter.k8s.aws/instance-size,        operator: In, values: ["xlarge", "2xlarge"] }
+      nodeClassRef:
+        group: karpenter.k8s.aws
+        kind: EC2NodeClass
+        name: default
+      expireAfter: 336h
+  limits:
+    cpu: 16
+  disruption:
+    consolidationPolicy: WhenEmptyOrUnderutilized
+    consolidateAfter: 30s

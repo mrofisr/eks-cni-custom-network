@@ -1,0 +1,110 @@
+apiVersion: v1
+kind: Secret
+metadata:
+  name: demo-db
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: demo-root
+  MYSQL_PASSWORD: demo-pass
+  MYSQL_DATABASE: catalogdb
+  MYSQL_USER: catalog_user
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-db
+spec:
+  selector: { app: demo-db }
+  ports:
+    - port: 3306
+      targetPort: 3306
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-db
+  labels: { app: demo-db }
+spec:
+  replicas: 1
+  selector: { matchLabels: { app: demo-db } }
+  template:
+    metadata:
+      labels: { app: demo-db }
+    spec:
+      nodeSelector:
+        workload-type: database
+      tolerations:
+        - key: workload-type
+          value: database
+          operator: Equal
+          effect: NoSchedule
+      containers:
+        - name: mysql
+          image: public.ecr.aws/docker/library/mysql:8.0
+          envFrom:
+            - secretRef:
+                name: demo-db
+          env:
+            - name: MYSQL_ALLOW_EMPTY_PASSWORD
+              value: "true"
+          args:
+            - --disable-log-bin
+          resources:
+            requests: { cpu: 500m, memory: 1Gi }
+            limits:   { cpu: "1",  memory: 1Gi }
+          ports:
+            - containerPort: 3306
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: demo-app-public
+  annotations:
+    service.beta.kubernetes.io/aws-load-balancer-type: "external"
+    service.beta.kubernetes.io/aws-load-balancer-nlb-target-type: "instance"
+    service.beta.kubernetes.io/aws-load-balancer-scheme: "internet-facing"
+spec:
+  type: LoadBalancer
+  selector: { app: demo-app }
+  ports:
+    - port: 80
+      targetPort: 8080
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: demo-app
+  labels: { app: demo-app }
+spec:
+  replicas: 2
+  selector: { matchLabels: { app: demo-app } }
+  template:
+    metadata:
+      labels: { app: demo-app }
+    spec:
+      nodeSelector:
+        workload-tier: app
+      containers:
+        - name: catalog
+          image: public.ecr.aws/aws-containers/retail-store-sample-catalog:1.6.1
+          env:
+            - name: GIN_MODE
+              value: release
+            - name: RETAIL_CATALOG_PERSISTENCE_PROVIDER
+              value: mysql
+            - name: RETAIL_CATALOG_PERSISTENCE_ENDPOINT
+              value: demo-db:3306
+            - name: RETAIL_CATALOG_PERSISTENCE_PASSWORD
+              valueFrom:
+                secretKeyRef: { name: demo-db, key: MYSQL_PASSWORD }
+            - name: RETAIL_CATALOG_SEARCH_ENABLED
+              value: "false"
+          resources:
+            requests: { cpu: 250m, memory: 512Mi }
+            limits:   { cpu: "1",  memory: 1Gi }
+          ports:
+            - containerPort: 8080
+          readinessProbe:
+            httpGet: { path: /health, port: 8080 }
+            initialDelaySeconds: 10
+            periodSeconds: 5

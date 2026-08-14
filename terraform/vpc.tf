@@ -39,6 +39,60 @@ module "vpc" {
 }
 
 ################################################################################
+# VPC Interface & Gateway Endpoints (Pillar 01 - Cloud AWS API Connectivity)
+################################################################################
+
+module "vpc_endpoints" {
+  source  = "terraform-aws-modules/vpc/aws//modules/vpc-endpoints"
+  version = "6.6.1"
+
+  vpc_id             = module.vpc.vpc_id
+  subnet_ids         = module.vpc.private_subnets
+  security_group_ids = [module.eks.node_security_group_id]
+
+  endpoints = {
+    s3 = {
+      service         = "s3"
+      service_type    = "Gateway"
+      route_table_ids = concat(module.vpc.private_route_table_ids, module.vpc.intra_route_table_ids)
+      tags            = { Name = "${var.cluster_name}-s3-vpc-endpoint" }
+    },
+    sts = {
+      service             = "sts"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-sts-vpc-endpoint" }
+    },
+    ecr_api = {
+      service             = "ecr.api"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-ecr-api-vpc-endpoint" }
+    },
+    ecr_dkr = {
+      service             = "ecr.dkr"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-ecr-dkr-vpc-endpoint" }
+    },
+    secretsmanager = {
+      service             = "secretsmanager"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-secretsmanager-vpc-endpoint" }
+    },
+    ec2 = {
+      service             = "ec2"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-ec2-vpc-endpoint" }
+    },
+    eks = {
+      service             = "eks"
+      private_dns_enabled = true
+      tags                = { Name = "${var.cluster_name}-eks-vpc-endpoint" }
+    }
+  }
+
+  tags = var.tags
+}
+
+################################################################################
 # Private NAT Gateway (for intra subnets - CNI custom networking)
 ################################################################################
 

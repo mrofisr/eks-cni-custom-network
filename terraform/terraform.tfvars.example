@@ -1,0 +1,7 @@
+# Terraform variables example
+# Copy to terraform.tfvars or pass via CLI: -var-file=terraform.tfvars
+
+profile         = "default"
+region          = "ap-southeast-3"
+cluster_name    = "eks-default"
+cluster_version = "1.36"

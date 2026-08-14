@@ -17,17 +17,15 @@ terraform {
   }
 
   backend "s3" {
-    bucket  = ""
-    key     = "terraform.tfstate"
-    profile = ""
-    region  = "ap-southeast-3"
+    key    = "terraform.tfstate"
+    region = "ap-southeast-3"
     # dynamodb_table = "terraform-lock" # Uncomment after creating the DynamoDB table
     encrypt = true
   }
 }
 
 provider "aws" {
-  region  = var.region
+  region = var.region
 
   default_tags {
     tags = var.tags

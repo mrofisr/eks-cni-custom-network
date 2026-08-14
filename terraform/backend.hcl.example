@@ -1,0 +1,7 @@
+# Backend S3 configuration example
+# Usage: terraform init -backend-config=backend.hcl
+
+bucket  = "my-terraform-state-bucket"
+key     = "eks-cni-custom-network/terraform.tfstate"
+region  = "ap-southeast-3"
+profile = "default"

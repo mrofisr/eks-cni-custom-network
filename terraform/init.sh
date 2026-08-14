@@ -223,7 +223,6 @@ set -e
 CLUSTER_NAME="eks-default"
 AWS_REGION="ap-southeast-3"
 KARPENTER_VERSION="1.14.0"
-MANIFEST_DIR="/home/ubuntu/manifest/kubernetes/yaml/prod/thirdparty"
 
 echo "==> Configuring kubectl..."
 aws eks update-kubeconfig --region $AWS_REGION --name $CLUSTER_NAME
@@ -233,18 +232,33 @@ kubectl apply --server-side -f "https://raw.githubusercontent.com/aws/karpenter-
 kubectl apply --server-side -f "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/pkg/apis/crds/karpenter.k8s.aws_ec2nodeclasses.yaml"
 kubectl apply --server-side -f "https://raw.githubusercontent.com/aws/karpenter-provider-aws/v${KARPENTER_VERSION}/pkg/apis/crds/karpenter.sh_nodeclaims.yaml"
 
-echo "==> Applying Karpenter deployment..."
-kubectl apply -f $MANIFEST_DIR/compute/karpenter.yaml
+echo "==> Deploying Karpenter via Helm..."
+helm registry logout public.ecr.aws || true
 
-echo "==> Waiting for Karpenter to be ready..."
-kubectl rollout status deployment karpenter -n kube-system --timeout=300s
+helm upgrade --install karpenter \
+  oci://public.ecr.aws/karpenter/karpenter \
+  --version "${KARPENTER_VERSION}" \
+  --namespace kube-system --create-namespace \
+  --set "settings.clusterName=${CLUSTER_NAME}" \
+  --set "settings.interruptionQueue=${CLUSTER_NAME}" \
+  --set controller.resources.requests.cpu=1 \
+  --set controller.resources.requests.memory=1Gi \
+  --set controller.resources.limits.cpu=1 \
+  --set controller.resources.limits.memory=1Gi \
+  --wait
+
+echo "==> Cloning eks-cni-custom-network repo for manifests..."
+git clone https://github.com/mrofisr/eks-cni-custom-network.git /home/ubuntu/eks-cni-custom-network
+
+echo "==> Applying gp3 default StorageClass..."
+kubectl apply -f /home/ubuntu/eks-cni-custom-network/manifests/storageclass-gp3.yaml
 
 echo "==> Applying EC2NodeClass and NodePools..."
-kubectl apply -f $MANIFEST_DIR/networking/ec2nc.yaml
-kubectl apply -f $MANIFEST_DIR/compute/nodepools.yaml
+kubectl apply -f /home/ubuntu/eks-cni-custom-network/manifests/karpenter-nodeclass.yaml
+kubectl apply -f /home/ubuntu/eks-cni-custom-network/manifests/karpenter-nodepools.yaml
 
-echo "==> Applying StorageClass..."
-kubectl apply -f $MANIFEST_DIR/compute/storageclass.yaml
+echo "==> Deploying Demo Retail App Workloads & Public LoadBalancer..."
+kubectl apply -f /home/ubuntu/eks-cni-custom-network/manifests/demo-retail-app.yaml
 
 echo "==> Karpenter installation complete!"
 echo "==> Verify: kubectl get nodepools,ec2nodeclasses"

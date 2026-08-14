@@ -1,6 +1,7 @@
 variable "profile" {
   description = "AWS Profile to Execute this Terraform"
   type        = string
+  default     = "default"
 }
 
 variable "region" {
@@ -17,12 +18,12 @@ variable "repository_name" {
   description = "List of ECR repository names to create"
   type        = list(string)
   default = [
+    "jawaracloud/retail-store-sample-catalog",
+    "jawaracloud/retail-store-sample-ui",
+    "jawaracloud/mysql",
     "jawaracloud/grafana-alloy",
     "jawaracloud/grafana-grafana",
-    "jawaracloud/grafana-mimir",
-    "jawaracloud/grafana-alertmanager",
-    "jawaracloud/grafana-loki",
-    "jawaracloud/busybox",
+    "jawaracloud/busybox"
   ]
 }
 
@@ -39,7 +40,7 @@ variable "cluster_name" {
 variable "cluster_version" {
   description = "Kubernetes version to use for the EKS cluster"
   type        = string
-  default     = "1.35"
+  default     = "1.36"
 }
 
 variable "eks_managed_node_groups" {
