@@ -8,6 +8,6 @@ resource "aws_eip" "gateway" {
   domain = "vpc"
 
   tags = merge(var.tags, {
-    Name = "${var.cluster_name}-gateway-eip-${data.aws_availability_zones.available.names[count.index]}"
+    Name = "${local.resource_name}-gateway-eip-${data.aws_availability_zones.available.names[count.index]}"
   })
 }

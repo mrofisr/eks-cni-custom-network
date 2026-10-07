@@ -6,7 +6,7 @@ module "s3_tfstate" {
   source  = "terraform-aws-modules/s3-bucket/aws"
   version = "5.14.1"
 
-  bucket = "${var.cluster_name}-tfstate"
+  bucket = "${local.resource_name}-tfstate"
 
   control_object_ownership = true
   object_ownership         = "BucketOwnerEnforced"
@@ -36,7 +36,7 @@ module "s3_data" {
   source  = "terraform-aws-modules/s3-bucket/aws"
   version = "5.14.1"
 
-  bucket = "${var.cluster_name}-data"
+  bucket = "${local.resource_name}-data"
 
   control_object_ownership = true
   object_ownership         = "BucketOwnerEnforced"

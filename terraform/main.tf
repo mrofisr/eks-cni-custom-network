@@ -16,12 +16,12 @@ terraform {
     }
   }
 
-  backend "s3" {
-    key    = "terraform.tfstate"
-    region = "ap-southeast-3"
-    # dynamodb_table = "terraform-lock" # Uncomment after creating the DynamoDB table
-    encrypt = true
-  }
+  # backend "s3" {
+  #   bucket  = "eks-default-tfstate"
+  #   key     = "terraform.tfstate"
+  #   region  = "ap-southeast-3"
+  #   encrypt = true
+  # }
 }
 
 provider "aws" {
@@ -65,3 +65,15 @@ data "aws_availability_zones" "available" {
 
 data "aws_caller_identity" "current" {}
 data "aws_region" "current" {}
+
+locals {
+  account_id = data.aws_caller_identity.current.account_id
+  region     = data.aws_region.current.region
+  # Use last 6 digits of account ID + short region to keep within IAM 38-char name_prefix limit
+  # EKS module appends "-cluster-" (9 chars), so resource_name must be <= 29 chars
+  # e.g. "617931-apse3-eks-default" = 24 chars + "-cluster-" = 33 chars ✓
+  account_short = substr(local.account_id, 6, 6)
+  region_short  = replace(replace(replace(local.region, "ap-southeast-", "apse"), "ap-northeast-", "apne"), "ap-south-", "aps")
+  name_prefix   = "${local.account_short}-${local.region_short}"
+  resource_name = "${local.name_prefix}-${var.cluster_name}"
+}

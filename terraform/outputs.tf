@@ -107,11 +107,6 @@ output "gateway_eip_allocations" {
 # Alloy
 ################################################################################
 
-output "alloy_cloudwatch_role_arn" {
-  description = "Alloy IRSA role ARN for CloudWatch metrics"
-  value       = aws_iam_role.alloy_cloudwatch.arn
-}
-
 ################################################################################
 # VPC
 ################################################################################

@@ -4,7 +4,7 @@
 ################################################################################
 
 resource "aws_iam_role" "ec2_bastion_role" {
-  name = "${var.cluster_name}-bastion-role"
+  name = "${local.resource_name}-bastion-role"
 
   assume_role_policy = jsonencode({
     Version = "2012-10-17"
@@ -52,7 +52,7 @@ resource "aws_iam_role_policy_attachment" "bastion_eks_service_policy" {
 # }
 
 resource "aws_iam_role_policy" "bastion_eks_access" {
-  name = "${var.cluster_name}-bastion-eks-access"
+  name = "${local.resource_name}-bastion-eks-access"
   role = aws_iam_role.ec2_bastion_role.name
 
   policy = jsonencode({
@@ -83,7 +83,7 @@ resource "aws_iam_role_policy" "bastion_eks_access" {
 }
 
 resource "aws_iam_instance_profile" "bastion_profile" {
-  name = "${var.cluster_name}-bastion-profile"
+  name = "${local.resource_name}-bastion-profile"
   role = aws_iam_role.ec2_bastion_role.name
 }
 
@@ -94,7 +94,7 @@ resource "aws_iam_instance_profile" "bastion_profile" {
 module "ec2" {
   source                 = "terraform-aws-modules/ec2-instance/aws"
   version                = "6.4.0"
-  name                   = "${var.cluster_name}-bastion"
+  name                   = "${local.resource_name}-bastion"
   instance_type          = "t4g.xlarge"
   user_data_base64       = base64encode(file("${path.module}/init.sh"))
   vpc_security_group_ids = [module.eks.cluster_primary_security_group_id]

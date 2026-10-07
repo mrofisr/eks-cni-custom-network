@@ -7,12 +7,16 @@ module "eks" {
   source  = "terraform-aws-modules/eks/aws"
   version = "21.17.1"
 
-  name               = var.cluster_name
+  name               = local.resource_name
   kubernetes_version = var.cluster_version
   tags               = var.tags
 
+  upgrade_policy = {
+    support_type = "STANDARD"
+  }
+
   cluster_tags = merge(var.tags, {
-    "karpenter.sh/discovery" = var.cluster_name
+    "karpenter.sh/discovery" = local.resource_name
   })
 
   create_iam_role            = true
@@ -34,6 +38,45 @@ module "eks" {
   enabled_log_types           = []
   create_cloudwatch_log_group = false
 
+  addons = {
+    coredns = {
+      most_recent = true
+    }
+    kube-proxy = {
+      most_recent = true
+    }
+    eks-pod-identity-agent = {
+      most_recent = true
+    }
+    aws-ebs-csi-driver = {
+      most_recent = true
+    }
+    aws-efs-csi-driver = {
+      most_recent = true
+    }
+    amazon-cloudwatch-observability = {
+      most_recent = true
+    }
+    aws-mountpoint-s3-csi-driver = {
+      most_recent = true
+    }
+    eks-node-monitoring-agent = {
+      most_recent = true
+    }
+    aws-secrets-store-csi-driver-provider = {
+      most_recent = true
+    }
+    kube-state-metrics = {
+      most_recent = true
+    }
+    metrics-server = {
+      most_recent = true
+    }
+    cert-manager = {
+      most_recent = true
+    }
+  }
+
   eks_managed_node_groups = {
     main = {
       name           = var.eks_managed_node_groups.main.name
@@ -51,6 +94,7 @@ module "eks" {
         AmazonEKS_CNI_Policy               = "arn:aws:iam::aws:policy/AmazonEKS_CNI_Policy"
         AmazonEC2ContainerRegistryReadOnly = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
         AmazonSSMManagedInstanceCore       = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+        BottlerocketNodeEC2Describe        = aws_iam_policy.bottlerocket_node_ec2_describe.arn
       }
 
       block_device_mappings = {
@@ -85,6 +129,28 @@ module "eks" {
 }
 
 ################################################################################
+# Bottlerocket node IAM policy (pluto requires ec2:DescribeInstances)
+################################################################################
+
+resource "aws_iam_policy" "bottlerocket_node_ec2_describe" {
+  name        = "BottlerocketNodeEC2Describe-${local.resource_name}"
+  description = "Allows Bottlerocket pluto service to retrieve instance private DNS name"
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect   = "Allow"
+        Action   = ["ec2:DescribeInstances"]
+        Resource = "*"
+      }
+    ]
+  })
+
+  tags = var.tags
+}
+
+################################################################################
 # Karpenter IAM & Infrastructure (SQS, EventBridge)
 ################################################################################
 
@@ -95,10 +161,11 @@ module "karpenter" {
   cluster_name = module.eks.cluster_name
 
   create_node_iam_role          = true
-  node_iam_role_name            = "KarpenterNodeRole-${var.cluster_name}"
+  node_iam_role_name            = "KarpenterNodeRole-${local.resource_name}"
   node_iam_role_use_name_prefix = false
   node_iam_role_additional_policies = {
     AmazonSSMManagedInstanceCore = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+    BottlerocketNodeEC2Describe  = aws_iam_policy.bottlerocket_node_ec2_describe.arn
   }
 
   enable_spot_termination = true

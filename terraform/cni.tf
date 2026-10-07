@@ -32,23 +32,33 @@ resource "aws_eks_addon" "vpc_cni" {
 
 ################################################################################
 # ENIConfig CRDs (one per AZ - maps to intra subnets)
+# Applied via bastion init.sh after cluster is ready — not via Terraform
+# kubernetes_manifest requires a live cluster endpoint at plan time.
 ################################################################################
 
-resource "kubernetes_manifest" "eniconfig" {
+resource "null_resource" "eniconfig" {
   for_each = { for idx, az in data.aws_availability_zones.available.names : az => idx }
 
-  manifest = {
-    apiVersion = "crd.k8s.amazonaws.com/v1alpha1"
-    kind       = "ENIConfig"
-    metadata = {
-      name = each.key
-    }
-    spec = {
-      subnet = module.vpc.intra_subnets[each.value]
-      securityGroups = [
-        module.eks.node_security_group_id
-      ]
-    }
+  triggers = {
+    az     = each.key
+    subnet = module.vpc.intra_subnets[each.value]
+    sg     = module.eks.node_security_group_id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name} 2>/dev/null || true
+      kubectl apply -f - <<EOF
+apiVersion: crd.k8s.amazonaws.com/v1alpha1
+kind: ENIConfig
+metadata:
+  name: ${each.key}
+spec:
+  subnet: ${module.vpc.intra_subnets[each.value]}
+  securityGroups:
+    - ${module.eks.node_security_group_id}
+EOF
+    EOT
   }
 
   depends_on = [aws_eks_addon.vpc_cni]
@@ -56,24 +66,31 @@ resource "kubernetes_manifest" "eniconfig" {
 
 ################################################################################
 # SecurityGroupPolicy CRD (pod-level security groups)
+# Applied via bastion init.sh after cluster is ready — same reason as above.
 ################################################################################
 
-resource "kubernetes_manifest" "security_group_policy" {
-  manifest = {
-    apiVersion = "vpcresources.k8s.aws/v1beta1"
-    kind       = "SecurityGroupPolicy"
-    metadata = {
-      name      = "${var.cluster_name}-default-sgp"
-      namespace = "default"
-    }
-    spec = {
-      podSelector = {}
-      securityGroups = {
-        groupIds = [
-          module.eks.node_security_group_id
-        ]
-      }
-    }
+resource "null_resource" "security_group_policy" {
+  triggers = {
+    cluster = module.eks.cluster_name
+    sg      = module.eks.node_security_group_id
+  }
+
+  provisioner "local-exec" {
+    command = <<-EOT
+      aws eks update-kubeconfig --region ${var.region} --name ${module.eks.cluster_name} 2>/dev/null || true
+      kubectl apply -f - <<EOF
+apiVersion: vpcresources.k8s.aws/v1beta1
+kind: SecurityGroupPolicy
+metadata:
+  name: ${local.resource_name}-default-sgp
+  namespace: default
+spec:
+  podSelector: {}
+  securityGroups:
+    groupIds:
+      - ${module.eks.node_security_group_id}
+EOF
+    EOT
   }
 
   depends_on = [aws_eks_addon.vpc_cni]

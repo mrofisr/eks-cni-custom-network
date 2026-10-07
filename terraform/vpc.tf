@@ -6,7 +6,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "6.6.1"
 
-  name = "${var.cluster_name}-vpc"
+  name = "${local.resource_name}-vpc"
   cidr = var.vpc_cidr
 
   secondary_cidr_blocks = var.secondary_cidr_blocks
@@ -23,16 +23,16 @@ module "vpc" {
 
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb" = 1
-    "karpenter.sh/discovery"          = var.cluster_name
+    "karpenter.sh/discovery"          = local.resource_name
   }
 
   public_subnet_tags = {
     "kubernetes.io/role/elb" = 1
-    "karpenter.sh/discovery" = var.cluster_name
+    "karpenter.sh/discovery" = local.resource_name
   }
 
   intra_subnet_tags = {
-    "karpenter.sh/discovery" = var.cluster_name
+    "karpenter.sh/discovery" = local.resource_name
   }
 
   tags = var.tags
@@ -55,37 +55,37 @@ module "vpc_endpoints" {
       service         = "s3"
       service_type    = "Gateway"
       route_table_ids = concat(module.vpc.private_route_table_ids, module.vpc.intra_route_table_ids)
-      tags            = { Name = "${var.cluster_name}-s3-vpc-endpoint" }
+      tags            = { Name = "${local.resource_name}-s3-vpc-endpoint" }
     },
     sts = {
       service             = "sts"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-sts-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-sts-vpc-endpoint" }
     },
     ecr_api = {
       service             = "ecr.api"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-ecr-api-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-ecr-api-vpc-endpoint" }
     },
     ecr_dkr = {
       service             = "ecr.dkr"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-ecr-dkr-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-ecr-dkr-vpc-endpoint" }
     },
     secretsmanager = {
       service             = "secretsmanager"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-secretsmanager-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-secretsmanager-vpc-endpoint" }
     },
     ec2 = {
       service             = "ec2"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-ec2-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-ec2-vpc-endpoint" }
     },
     eks = {
       service             = "eks"
       private_dns_enabled = true
-      tags                = { Name = "${var.cluster_name}-eks-vpc-endpoint" }
+      tags                = { Name = "${local.resource_name}-eks-vpc-endpoint" }
     }
   }
 
@@ -101,7 +101,7 @@ resource "aws_nat_gateway" "private" {
   subnet_id         = module.vpc.private_subnets[0]
 
   tags = merge(var.tags, {
-    Name = "${var.cluster_name}-private-nat"
+    Name = "${local.resource_name}-private-nat"
   })
 }
 
